@@ -113,7 +113,7 @@ main(void) {
 					exit(1);
 				}
 				pid2 = fork(); 
-				if(pid1 == 0){//aqui habla el hijo 1
+				if(pid2 == 0){//aqui habla el hijo 1
 					close(p[1]);//Cerramos el extremo de escritura porque el hijo solo escribe en el pipe
 					dup2(p[0],0);//duplicamos la salida del pipe en la entrada estandar (1), redireccionamos stdout al out del pipe
 					//close(p[1]) esto lo podemos hacer porque ya hemos puesto el descriptor del pipe en la salida
@@ -132,7 +132,6 @@ main(void) {
 				wait(NULL);//LO SUYO ES PONER UN WAIT STATUS
 				//Para saber cómo ha acabado
 				printf("Los dos hijos han terminado\n");
-				continue;
 				}
 							/*for (j=0; j<line->commands[i].argc; j++) {
 								printf("  argumento %d: %s\n", j, line->commands[i].argv[j]);
