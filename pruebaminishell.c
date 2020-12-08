@@ -52,65 +52,67 @@ int main(void){
         }
         //Ahora vamos a hacer el for
         //for(i=0; i< line->ncommands; i++){
-        if(line->ncommands > 1){//comprobamos que nos meten más de un comando
+        else if(line->ncommands > 1){//comprobamos que nos meten más de un comando
             pid_t pid[line->ncommands];//vamos a crear tantos hijos como comandos tengamos
-            int p[line->ncommands -1][2];//Declaramos tantas pipes como hijos
+            int p[line->ncommands -1][2];//Declaramos tantas pipes como hijos-1
+            int status;
             //Ahora inicializamos las pipes
-            int status[line->ncommands];
             for (i = 0; i<line->ncommands-1;i++){
-                pipe(p[i]);//inicializamos los pipes
+                pipe(p[i]);
             }
-            for (j=0; j<(line->ncommands-1); j++){
+
+            for (j=0; j<line->ncommands; j++){
                 //pipe(p[j]);//inicializamos el pipe
-                if(j == 0){
-                    pid[j] = fork();
+                pid[j]=fork();
+                if (pid[j] < 0) { //Mensaje de error por si falla el fork
+                    fprintf(stderr, "Falló el fork().\n%s\n", strerror(errno));
+                    exit(1);
                 }
-                if(pid[j] == 0){//aqui habla el hijo 1
-                    close(p[j][0]);//Cerramos el extremo de lectura porque el hijo solo escribe en el pipe
-                    dup2(p[j][1],1);//duplicamos la entrada del pipe en la salida estandar (1), redireccionamos stdout al in del pipe
-                    //close(p[j][1]) esto lo podemos hacer porque ya hemos puesto el descriptor del pipe en la salida
-                    execvp(line->commands[j].argv[0], line->commands[j].argv);
-                    exit(1);//si llega a esta línea es que ha habido un fallo
+                if(pid[j] == 0){//Habla el hijo
+                    if(j== 0){//el primer hijo
+                        close(p[j][0]);//Cerramos el extremo de lectura porque el hijo solo escribe en el pipe
+                        dup2(p[j][1],1);//duplicamos la entrada del pipe en la salida estandar (1), redireccionamos stdout al in del pipe
+                        //close(p[j][1]) esto lo podemos hacer porque ya hemos puesto el descriptor del pipe en la salida
+                        execvp(line->commands[j].argv[0], line->commands[j].argv);
+                        //solo pasa a este código si falla el execvp
+                        fprintf(stderr, "Error al ejecutar el comando: %s\n", strerror(errno));
+						exit(1);
+                    }
+                    else if ( j == line->ncommands-1){// Habla el último hijo
+                        close(p[j-1][1]);//Cerramos el extremo de escritura porque el hijo solo escribe en el pipe
+                        dup2(p[j-1][0],0);//duplicamos la salida del pipe en la entrada estandar (1), redireccionamos stdout al out del pipe
+                        //close(p[j][0]) esto lo podemos hacer porque ya hemos puesto el descriptor del pipe en la salida
+                        execvp(line->commands[j].argv[0], line->commands[j].argv);
+                        //solo pasa a este código si falla el execvp
+                        fprintf(stderr, "Error al ejecutar el comando: %s\n", strerror(errno));
+						exit(1);
+                    }
+                    else{ //Hijos intermedios
+                        close(p[i][0]);	//cierro pues del nuevo pipe no vamos a leer
+                        close(p[i-1][1]);	//cierro pues del anterior pipe no vamos a escibir
+                        dup2(p[i-1][0],0);  //duplicamos la salida del pipe en la entrada estandar (1), redireccionamos stdout al out del pipe
+                        dup2(p[i][1],1);    //duplicamos la entrada del pipe en la salida estandar (1), redireccionamos stdout al in del pipe
+                        execvp(line->commands[j].argv[0], line->commands[j].argv);
+                        //solo pasa a este código si falla el execvp
+                        fprintf(stderr, "Error al ejecutar el comando: %s\n", strerror(errno));
+						exit(1);
+
+                    }
                 }
-                pid[j+1] = fork();
-                if(pid[j+1] == 0){//aqui habla el hijo 1
-					close(p[j][1]);//Cerramos el extremo de escritura porque el hijo solo escribe en el pipe
-                    if(j+1 == line->ncommands){
-                        dup2(p[j][0],0);//duplicamos la salida del pipe en la entrada estandar (1), redireccionamos stdout al out del pipe
-                    }
-                    else{
-                        dup2(p[j+1][1],p[j][0]);
-                    }
-                    dup2(p[j][0],0);//duplicamos la salida del pipe en la entrada estandar (1), redireccionamos stdout al out del pipe
-                    //close(p[j][0]) esto lo podemos hacer porque ya hemos puesto el descriptor del pipe en la salida
-					
-                    execvp(line->commands[j+1].argv[0], line->commands[j+1].argv);
-					exit(1);//si llega a esta línea es que ha habido un fallo
-				}
-                //cerramos el padre
-                close(p[j][0]);
-				close(p[j][1]);
-                //si no hacemos estos close nunca va a acabar el proceso
-                wait(&status[j]);//primer hijo
-						if(WIFEXITED(status[j]) != 0){
-                            printf("Un hijo terminó\n");
-							if(WEXITSTATUS(status[j]) != 0)
-								printf("El comando no se ejecutó correctamente\n");}
-						
-				
-				wait(&status[j+1]);//segundo hijo
-						if(WIFEXITED(status[j+1]) != 0){
-                            printf("Los dos hijos han terminado\n");
-							if(WEXITSTATUS(status[j+1]) != 0)
-								printf("El comando no se ejecutó correctamente\n");}
-				//Para saber cómo ha acabado
-				//printf("Los dos hijos han terminado\n");
+                else{//habla el padre
+                    // close(p[j][0]);
+                    // close(p[j][1]);
+                }
             }
-            
-				//si no hacemos estos close nunca va a acabar el proceso
+            //esperamos por los hijos
+            waitpid(-1,&status,0);
 
-				
 
+
+            for(i=0;i<line->ncommands-1;i++){
+				free(p[i]);
+			}
+			free(p);
         }
         printf("msh>$ ");
     }
