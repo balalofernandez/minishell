@@ -54,22 +54,65 @@ int main(void){
         //for(i=0; i< line->ncommands; i++){
         if(line->ncommands > 1){//comprobamos que nos meten más de un comando
             pid_t pid[line->ncommands];//vamos a crear tantos hijos como comandos tengamos
-            int p[line->ncommands][2];//Declaramos tantas pipes como hijos
+            int p[line->ncommands -1][2];//Declaramos tantas pipes como hijos
             //Ahora inicializamos las pipes
-            for (j=0; j<line->ncommands; j++){
-                pipe(p[j]);//inicializamos el pipe
-                pid[j] = fork();
-                if(pid[j] == 0){//aqui habla el hijo 1
-					close(p[0]);//Cerramos el extremo de lectura porque el hijo solo escribe en el pipe
-					dup2(p[1],1);//duplicamos la entrada del pipe en la salida estandar (1), redireccionamos stdout al in del pipe
-					//close(p[1]) esto lo podemos hacer porque ya hemos puesto el descriptor del pipe en la salida
-					execvp(line->commands[0].argv[0], line->commands[0].argv);
-					exit(1);
-				}
+            int status[line->ncommands];
+            for (i = 0; i<line->ncommands-1;i++){
+                pipe(p[i]);//inicializamos los pipes
             }
+            for (j=0; j<(line->ncommands-1); j++){
+                //pipe(p[j]);//inicializamos el pipe
+                if(j == 0){
+                    pid[j] = fork();
+                }
+                if(pid[j] == 0){//aqui habla el hijo 1
+                    close(p[j][0]);//Cerramos el extremo de lectura porque el hijo solo escribe en el pipe
+                    dup2(p[j][1],1);//duplicamos la entrada del pipe en la salida estandar (1), redireccionamos stdout al in del pipe
+                    //close(p[j][1]) esto lo podemos hacer porque ya hemos puesto el descriptor del pipe en la salida
+                    execvp(line->commands[j].argv[0], line->commands[j].argv);
+                    exit(1);//si llega a esta línea es que ha habido un fallo
+                }
+                pid[j+1] = fork();
+                if(pid[j+1] == 0){//aqui habla el hijo 1
+					close(p[j][1]);//Cerramos el extremo de escritura porque el hijo solo escribe en el pipe
+                    if(j+1 == line->ncommands){
+                        dup2(p[j][0],0);//duplicamos la salida del pipe en la entrada estandar (1), redireccionamos stdout al out del pipe
+                    }
+                    else{
+                        dup2(p[j+1][1],p[j][0]);
+                    }
+                    dup2(p[j][0],0);//duplicamos la salida del pipe en la entrada estandar (1), redireccionamos stdout al out del pipe
+                    //close(p[j][0]) esto lo podemos hacer porque ya hemos puesto el descriptor del pipe en la salida
+					
+                    execvp(line->commands[j+1].argv[0], line->commands[j+1].argv);
+					exit(1);//si llega a esta línea es que ha habido un fallo
+				}
+                //cerramos el padre
+                close(p[j][0]);
+				close(p[j][1]);
+                //si no hacemos estos close nunca va a acabar el proceso
+                wait(&status[j]);//primer hijo
+						if(WIFEXITED(status[j]) != 0){
+                            printf("Un hijo terminó\n");
+							if(WEXITSTATUS(status[j]) != 0)
+								printf("El comando no se ejecutó correctamente\n");}
+						
+				
+				wait(&status[j+1]);//segundo hijo
+						if(WIFEXITED(status[j+1]) != 0){
+                            printf("Los dos hijos han terminado\n");
+							if(WEXITSTATUS(status[j+1]) != 0)
+								printf("El comando no se ejecutó correctamente\n");}
+				//Para saber cómo ha acabado
+				//printf("Los dos hijos han terminado\n");
+            }
+            
+				//si no hacemos estos close nunca va a acabar el proceso
+
+				
 
         }
-
+        printf("msh>$ ");
     }
 
 }

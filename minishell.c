@@ -63,13 +63,14 @@ main(void) {
 				}
 
 			}*/
+
 			//VAMOS A HACER UN EJEMPLO ESTATICO POR SI NOS MANDAN 2 ARGUMENTO
 			if(line->ncommands == 1){
 				printf("Vamos a hacer el primer comando\n");
 				pid_t pid;
 				int status;
 				if (line->commands->argc > 0){
-					printf("se va a ejecutar el comando %s\n", line->commands[i].argv[0]);
+					printf("se va a ejecutar el comando %s\n", line->commands[0].argv[0]);
 					pid = fork();
 					if (pid < 0) { // Error 
 					fprintf(stderr, "Falló el fork().\n%s\n", strerror(errno));
@@ -77,11 +78,11 @@ main(void) {
 					//continue;
 					}
 					else if (pid == 0) { // Proceso Hijo 
-							execvp(line->commands[0].argv[0], line->commands[0].argv);
+							//execvp("ls","ls","-l")
+							execvp(line->commands[0].argv[0], line->commands[0].argv); //ejecutar el primer comando
 							//Si llega aquí es que se ha producido un error en el execvp
 							printf("Error al ejecutar el comando: %s\n", strerror(errno));
 							exit(1);
-
 					}
 					else {
 						wait(&status);
@@ -92,6 +93,7 @@ main(void) {
 					}
 				}
 			}
+
 			if(line->ncommands > 1){
 				printf("Vamos a hacer los dos primeros comandos\n");
 				pid_t pid1,pid2;
