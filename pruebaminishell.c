@@ -69,7 +69,7 @@ int main(void){
                     exit(1);
                 }
                 if(pid[j] == 0){//Habla el hijo
-                    if(j== 0){//el primer hijo
+                    if(j == 0){//el primer hijo
                         close(p[j][0]);//Cerramos el extremo de lectura porque el hijo solo escribe en el pipe
                         dup2(p[j][1],1);//duplicamos la entrada del pipe en la salida estandar (1), redireccionamos stdout al in del pipe
                         //close(p[j][1]) esto lo podemos hacer porque ya hemos puesto el descriptor del pipe en la salida
@@ -100,8 +100,9 @@ int main(void){
                     }
                 }
                 else{//habla el padre
-                    // close(p[j][0]);
-                    // close(p[j][1]);
+                    if(!(j==(line->ncommands-1))){ // Por esto la violacion del core
+							close(p[j][1]);
+						}
                 }
             }
             //esperamos por los hijos
@@ -109,10 +110,10 @@ int main(void){
 
 
 
-            for(i=0;i<line->ncommands-1;i++){
-				free(p[i]);
-			}
-			free(p);
+            // for(i=0;i<line->ncommands-1;i++){
+			// 	free(p[i]);
+			// }
+			// free(p);
         }
         printf("msh>$ ");
     }

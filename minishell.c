@@ -95,46 +95,45 @@ main(void) {
 			}
 
 			if(line->ncommands > 1){
-				printf("Vamos a hacer los dos primeros comandos\n");
-				pid_t pid1,pid2;
-				int p[2];
+				
+				pid_t pid;
+				int p[2];//aqui declaramos los descriptores de fichero
+				int entrada;//aqui vamos a guardar la salida de un pipe para ponerlo en la entrada del siguiente
+				entrada = 0; //inicializamos la entrada aunque el primer valor es irrelevante
+				//pues se va a guardar la salida cuando se ejecute la primera iteración
+				for(i = 0; i< line->ncommands-1 ; i++){
+					pipe(p);//inicializamos la tubería
 
-				pipe(p);
-				pid1 = fork();//hijo1
+					pid = fork();
+					if (pid == 0){
 
-				/*el programa que escribe en el pipe es el programa ls
-				lo suyo es redireccionar la salida del ls
-				lo ponemos para que apunte al pipe
-				*/
+						/*Aqui queremos hacer una iteración normal del bucle 
+						en primer lugar vamos a duplicar la entrada del pipe en la salida del último pipe (la entrada del nuevo)
+						en la entrada estándar y luego vamos a duplicar la salida del pipe en la salida estándar*/
 
-				if(pid1 == 0){//aqui habla el hijo 1
-					close(p[0]);//Cerramos el extremo de lectura porque el hijo solo escribe en el pipe
-					dup2(p[1],1);//duplicamos la entrada del pipe en la salida estandar (1), redireccionamos stdout al in del pipe
-					//close(p[1]) esto lo podemos hacer porque ya hemos puesto el descriptor del pipe en la salida
-					execvp(line->commands[0].argv[0], line->commands[0].argv);
-					exit(1);
+						if( entrada != 0 ){
+							dup2(entrada,0);//duplicamos salida del ultimo pipe en la entrada estándar
+							close(entrada);
+						}
+						if(p[1] != 1){
+							dup2(p[1],1);//duplicamos la entrada del pipe en la salida estándar
+							close(p[1]);
+						}
+
+						execvp( line->commands[i].argv[0], line->commands[i].argv);//ejecutamos el comando
+					}
+
+					close(p[1]);//cerramos el extremo de escritura
+
+					entrada = p[0];//metemos la salida del pipe en lo que será la entrada del siguiente
 				}
-				pid2 = fork(); 
-				if(pid2 == 0){//aqui habla el hijo 1
-					close(p[1]);//Cerramos el extremo de escritura porque el hijo solo escribe en el pipe
-					dup2(p[0],0);//duplicamos la salida del pipe en la entrada estandar (1), redireccionamos stdout al out del pipe
-					//close(p[1]) esto lo podemos hacer porque ya hemos puesto el descriptor del pipe en la salida
-					execvp(line->commands[1].argv[0], line->commands[1].argv);
-					printf("Error en el execvp\n");
-					exit(1);
-				}
 
-				//El padre sigue teniendo el pipe
-				close(p[0]);
-				close(p[1]);
-				//si no hacemos estos close nunca va a acabar el proceso
+				dup2(entrada, 0);//para el último mandato duplicamos la salida del pipe en la entrada estándar
 
-				wait(NULL);//para el primer hijo
-				printf("Un hijo terminó\n");
-				wait(NULL);//LO SUYO ES PONER UN WAIT STATUS
-				//Para saber cómo ha acabado
-				printf("Los dos hijos han terminado\n");
-				}
+				//ejecutamos el último mandato
+				execvp(line->commands[line->ncommands-1].argv[0], line->commands[line->ncommands -1].argv);
+
+			}
 							/*for (j=0; j<line->commands[i].argc; j++) {
 								printf("  argumento %d: %s\n", j, line->commands[i].argv[j]);
 							}*/
