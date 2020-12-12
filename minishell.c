@@ -113,11 +113,11 @@ main(void) {
 
 						if( entrada != 0 ){
 							dup2(entrada,0);//duplicamos salida del ultimo pipe en la entrada estándar
-							close(entrada);
+							close(entrada);//cerramos la salida del ultimo pipe
 						}
 						if(p[1] != 1){
 							dup2(p[1],1);//duplicamos la entrada del pipe en la salida estándar
-							close(p[1]);
+							close(p[1]);//cerramos la entrada del pipe
 						}
 
 						execvp( line->commands[i].argv[0], line->commands[i].argv);//ejecutamos el comando
@@ -129,6 +129,7 @@ main(void) {
 				}
 
 				dup2(entrada, 0);//para el último mandato duplicamos la salida del pipe en la entrada estándar
+				close(entrada);
 
 				//ejecutamos el último mandato
 				execvp(line->commands[line->ncommands-1].argv[0], line->commands[line->ncommands -1].argv);
