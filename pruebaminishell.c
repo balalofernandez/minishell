@@ -11,6 +11,39 @@
 
 #include "parser.h"
 
+void mycd(int argc, char *argv[]){
+    char *dir;
+	char buffer[512];
+	
+	if(argc > 2)
+	{
+	  fprintf(stderr,"Uso: %s directorio\n", argv[0]);
+	  return 1;
+	}
+	
+	if (argc == 1)
+	{
+		dir = getenv("HOME");
+		if(dir == NULL)
+		{
+		  fprintf(stderr,"No existe la variable $HOME\n");	
+		}
+	}
+	else 
+	{
+		dir = argv[1];
+	}
+	
+	// Comprobar si es un directorio
+	if (chdir(dir) != 0) {
+			fprintf(stderr,"Error al cambiar de directorio: %s\n", strerror(errno));  
+	}
+	printf( "El directorio actual es: %s\n", getcwd(buffer,-1));
+
+	return 0;
+};
+
+
 int main(void){
     char buf[1024];//el buffer para leer de la entrada
 	tline * line;//la línea que leemos
@@ -85,6 +118,9 @@ int main(void){
             printf("Vamos a hacer el primer comando\n");
             pid_t pid;//aqui vamos a guardar el pid de los procesos
             int status;
+            if (strcmp(line->commands[0]->argv[0],"cd")){
+                mycd(line->commands[0].argc, line->commands[0].argv);
+            }
             if (line->commands->argc > 0){
                 printf("Se va a ejecutar el comando %s\n", line->commands[0].argv[0]);
                 pid = fork();//creamos el hijo
@@ -144,6 +180,8 @@ int main(void){
                         }
 
                         execvp( line->commands[i].argv[0], line->commands[i].argv);//ejecutamos el comando
+                        printf("Error al ejecutar el comando: %s\n", strerror(errno));
+                        exit(1);
                     }
 
                     close(p[1]);//cerramos el extremo de escritura
