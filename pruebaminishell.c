@@ -57,7 +57,7 @@ int main(void){
                 return 1;
             } else { 
                 dup2(fd,1); // Duplicamos el descriptor del fichero en la salida estándar
-            }	
+            }
 		}
 		if (line->redirect_error != NULL) {
             fichero = line->redirect_error;
