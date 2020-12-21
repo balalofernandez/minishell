@@ -11,30 +11,47 @@
 
 #include "parser.h"
 
-typedef struct ColaPids{
+typedef struct Nodo{
     int pid;
-    struct ColaPids *sig;
-} TColaPids;
+    struct Nodo *sig;
+} TNodo;
 
-typedef TColaPids *pNodo;
-//typedef TColaPids *ultimo;
+typedef TNodo *TCola;
 
-void nuevoPid(pNodo *primero, pNodo *ultimo, pid_t pid){
-    pNodo nuevo;
+void nuevoPid(TCola *primero, TCola *ultimo, pid_t pid){
+    TCola nuevo;
 
-    nuevo = (pNodo) malloc(sizeof(TColaPids));
+    nuevo = (TNodo *) malloc(sizeof(TNodo));
     nuevo->pid = pid;
     nuevo->sig = NULL;
-    if (*ultimo){//COMPROBAMOS QUE NO ESTÁ Vacía
+    if(primero == NULL){
+        primero = nuevo;
+        ultimo = nuevo;
+    }
+    else{
         (*ultimo)->sig = nuevo;
     }
-    *ultimo = NULL;
-    if(!*primero){//caso en el cual el primero es null, es decir, cola vacía 
-        (*primero)->sig = nuevo;
-    }
+    // if (*ultimo){//COMPROBAMOS QUE NO ESTÁ Vacía
+    //     (*ultimo)->sig = nuevo;
+    // }
+    // *ultimo = NULL;
+    // if(!*primero){//caso en el cual el primero es null, es decir, cola vacía 
+    //     (*primero)->sig = nuevo;
+    // }
 }
 
-int static *pids;
+void procesoTerminado(TCola *primero){
+    TCola aux;
+    if(!*primero){//caso en el que el primero sea NULL
+        fprintf( stderr , "Error: No hay más procesos");
+        exit(1);
+    }
+    aux = *primero;
+    *primero = (*primero)->sig;
+    free(aux);
+
+}
+
 
 int main(void){
     char buf[1024];//el buffer para leer de la entrada
@@ -44,8 +61,8 @@ int main(void){
     char *fichero;
 
     //Inicializamos la cola del jobs
-    pNodo primero = NULL;
-    pNodo ultimo = NULL;
+    TCola primero = NULL;
+    TCola ultimo = NULL;
 
     //guardamos los descriptores de la entrada, la salida y el error para si hay un redirección poder volver 
     //a la estándar
@@ -120,7 +137,12 @@ int main(void){
                 else if (pid == 0) { // Proceso Hijo 
                     signal(SIGINT,SIG_DFL);//si nos hacen ctrl+c cancelamos
                     signal(SIGQUIT,SIG_DFL);//si nos hacen ctrl+\ cancelamos
-
+                    if (strcmp((char *) line->commands[0].argv[0], "jobs ")){
+                        printf("es el comando jobs\n");
+                        exit(1);
+                    }
+                    // esCd();
+                    // esFg();
                     execvp(line->commands[0].argv[0], line->commands[0].argv); //ejecutar el primer comando
                     //Si llega aquí es que se ha producido un error en el execvp
                     printf("Error al ejecutar el comando: %s\n", strerror(errno));
@@ -134,7 +156,7 @@ int main(void){
                                 printf("El comando no se ejecutó correctamente\n");
                     }
                     if (line->background) {
-
+                        nuevoPid(&primero,&ultimo,pid);
                         printf("comando a ejecutarse en background\n");
                         printf("msh>$ ");
                         continue;
