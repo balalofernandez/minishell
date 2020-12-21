@@ -11,12 +11,58 @@
 
 #include "parser.h"
 
+typedef struct Nodo{
+    int pid;
+    struct Nodo *sig;
+} TNodo;
+
+typedef TNodo *TCola;
+
+void nuevoPid(TCola *primero, TCola *ultimo, pid_t pid){
+    TCola nuevo;
+
+    nuevo = (TNodo *) malloc(sizeof(TNodo));
+    nuevo->pid = pid;
+    nuevo->sig = NULL;
+    if(primero == NULL){
+        primero = nuevo;
+        ultimo = nuevo;
+    }
+    else{
+        (*ultimo)->sig = nuevo;
+    }
+    // if (*ultimo){//COMPROBAMOS QUE NO ESTÁ Vacía
+    //     (*ultimo)->sig = nuevo;
+    // }
+    // *ultimo = NULL;
+    // if(!*primero){//caso en el cual el primero es null, es decir, cola vacía 
+    //     (*primero)->sig = nuevo;
+    // }
+}
+
+void procesoTerminado(TCola *primero){
+    TCola aux;
+    if(!*primero){//caso en el que el primero sea NULL
+        fprintf( stderr , "Error: No hay más procesos");
+        exit(1);
+    }
+    aux = *primero;
+    *primero = (*primero)->sig;
+    free(aux);
+
+}
+
+
 int main(void){
     char buf[1024];//el buffer para leer de la entrada
 	tline * line;//la línea que leemos
 	int i,j;
     int fd;
     char *fichero;
+
+    //Inicializamos la cola del jobs
+    TCola primero = NULL;
+    TCola ultimo = NULL;
 
     //guardamos los descriptores de la entrada, la salida y el error para si hay un redirección poder volver 
     //a la estándar
@@ -57,7 +103,7 @@ int main(void){
                 return 1;
             } else { 
                 dup2(fd,1); // Duplicamos el descriptor del fichero en la salida estándar
-            }	
+            }
 		}
 		if (line->redirect_error != NULL) {
             fichero = line->redirect_error;
@@ -69,11 +115,7 @@ int main(void){
                 dup2(fd,2); // Duplicamos el descriptor del fichero en la salida de error
             }	
 		}
-        if (line->background) {
-			printf("comando a ejecutarse en background\n");
-            printf("msh>$ ");
-            continue;
-		} 
+        
 
 
         //Ahora vamos a hacer un for que vaya leyendo los distintos mandatos que tenemos
@@ -95,17 +137,30 @@ int main(void){
                 else if (pid == 0) { // Proceso Hijo 
                     signal(SIGINT,SIG_DFL);//si nos hacen ctrl+c cancelamos
                     signal(SIGQUIT,SIG_DFL);//si nos hacen ctrl+\ cancelamos
-
+                    if (strcmp((char *) line->commands[0].argv[0], "jobs ")){
+                        printf("es el comando jobs\n");
+                        exit(1);
+                    }
+                    // esCd();
+                    // esFg();
                     execvp(line->commands[0].argv[0], line->commands[0].argv); //ejecutar el primer comando
                     //Si llega aquí es que se ha producido un error en el execvp
                     printf("Error al ejecutar el comando: %s\n", strerror(errno));
                     exit(1);
                 }
                 else {
-                    wait(&status);//hacemos un wait del padre
-                    if(WIFEXITED(status) != 0)//comprobamos que el hijo haya terminado
-                        if(WEXITSTATUS(status) != 0)//vemos a ver si ha resultado incorrecta la resolucion del mandato
-                            printf("El comando no se ejecutó correctamente\n");
+                    if(!line->background){
+                        wait(&status);//hacemos un wait del padre
+                        if(WIFEXITED(status) != 0)//comprobamos que el hijo haya terminado
+                            if(WEXITSTATUS(status) != 0)//vemos a ver si ha resultado incorrecta la resolucion del mandato
+                                printf("El comando no se ejecutó correctamente\n");
+                    }
+                    if (line->background) {
+                        nuevoPid(&primero,&ultimo,pid);
+                        printf("comando a ejecutarse en background\n");
+                        printf("msh>$ ");
+                        continue;
+                    } 
                 }
             }
         }
