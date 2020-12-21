@@ -11,12 +11,41 @@
 
 #include "parser.h"
 
+typedef struct ColaPids{
+    int pid;
+    struct ColaPids *sig;
+} TColaPids;
+
+typedef TColaPids *pNodo;
+//typedef TColaPids *ultimo;
+
+void nuevoPid(pNodo *primero, pNodo *ultimo, pid_t pid){
+    pNodo nuevo;
+
+    nuevo = (pNodo) malloc(sizeof(TColaPids));
+    nuevo->pid = pid;
+    nuevo->sig = NULL;
+    if (*ultimo){//COMPROBAMOS QUE NO ESTÁ Vacía
+        (*ultimo)->sig = nuevo;
+    }
+    *ultimo = NULL;
+    if(!*primero){//caso en el cual el primero es null, es decir, cola vacía 
+        (*primero)->sig = nuevo;
+    }
+}
+
+int static *pids;
+
 int main(void){
     char buf[1024];//el buffer para leer de la entrada
 	tline * line;//la línea que leemos
 	int i,j;
     int fd;
     char *fichero;
+
+    //Inicializamos la cola del jobs
+    pNodo primero = NULL;
+    pNodo ultimo = NULL;
 
     //guardamos los descriptores de la entrada, la salida y el error para si hay un redirección poder volver 
     //a la estándar
@@ -69,11 +98,7 @@ int main(void){
                 dup2(fd,2); // Duplicamos el descriptor del fichero en la salida de error
             }	
 		}
-        if (line->background) {
-			printf("comando a ejecutarse en background\n");
-            printf("msh>$ ");
-            continue;
-		} 
+        
 
 
         //Ahora vamos a hacer un for que vaya leyendo los distintos mandatos que tenemos
@@ -102,10 +127,18 @@ int main(void){
                     exit(1);
                 }
                 else {
-                    wait(&status);//hacemos un wait del padre
-                    if(WIFEXITED(status) != 0)//comprobamos que el hijo haya terminado
-                        if(WEXITSTATUS(status) != 0)//vemos a ver si ha resultado incorrecta la resolucion del mandato
-                            printf("El comando no se ejecutó correctamente\n");
+                    if(!line->background){
+                        wait(&status);//hacemos un wait del padre
+                        if(WIFEXITED(status) != 0)//comprobamos que el hijo haya terminado
+                            if(WEXITSTATUS(status) != 0)//vemos a ver si ha resultado incorrecta la resolucion del mandato
+                                printf("El comando no se ejecutó correctamente\n");
+                    }
+                    if (line->background) {
+
+                        printf("comando a ejecutarse en background\n");
+                        printf("msh>$ ");
+                        continue;
+                    } 
                 }
             }
         }
