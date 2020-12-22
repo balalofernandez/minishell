@@ -7,12 +7,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <signal.h>
 
 
 #include "parser.h"
 
 typedef struct Nodo{
-    char *nombre;
+    char nombre[1024];
     struct Nodo *sig;
 } TNodo;
 
@@ -21,9 +22,11 @@ typedef TNodo *TCola;
 
 
 //FUNCIONES
+void ejecutar1(int bg, tline *line);
 void nuevoTrabajo(TCola *primero, TCola *ultimo, char *trabajo);
 void procesoTerminado(TCola *primero);
 void jobs(TCola *primero);
+void manejador(int sig);
 
 int main(void){
     char buf[1024];//el buffer para leer de la entrada
@@ -42,6 +45,8 @@ int main(void){
 	int fdSalida = dup(fileno(stdout));
 	int fdError = dup(fileno(stderr));
 
+    //SEÑALES
+    signal(SIGUSR1,manejador);
     signal(SIGINT,SIG_IGN);//si nos hacen ctrl+c no cancelamos
     signal(SIGQUIT,SIG_IGN);//si nos hacen ctrl+\ no cancelamos
 
@@ -54,7 +59,8 @@ int main(void){
         signal(SIGQUIT,SIG_IGN);//si nos hacen ctrl+\ no cancelamos
 
 
-        if (line==NULL) {//Queremos que el bucle vuelva a empezar si han pulsado "ENTER"
+        if (line==NULL || !strcmp(buf, "\n")) {//Queremos que el bucle vuelva a empezar si han pulsado "ENTER"
+            printf("msh>$ ");   
 			continue;
 		}
         if (line->redirect_input != NULL) {
@@ -95,98 +101,61 @@ int main(void){
         //para concatenar los mandatos.
         //Primero vamos a tener un caso base que es que solamente tenemos un único mandato
         //por lo que ejecutamos el mandato con execvp.
-        if(line->ncommands == 1){
-            printf("Vamos a hacer el primer comando\n");
+        if(line->ncommands == 1 && strcmp((char *) line->commands[0].argv[0], "jobs")){
             pid_t pid;//aqui vamos a guardar el pid de los procesos
             int status;
             if (line->commands->argc > 0){
-                printf("Se va a ejecutar el comando %s\n", line->commands[0].argv[0]);
-                pid = fork();//creamos el hijo
-                if (pid < 0) { //Mensaje de error por si falla el fork
-                fprintf(stderr, "Falló el fork().\n%s\n", strerror(errno));
-                exit(1);
+                if(line->background){
+                    pid = fork();//creamos el hijo
+                    if (pid < 0) { //Mensaje de error por si falla el fork
+                        fprintf(stderr, "Falló el fork().\n%s\n", strerror(errno));
+                        exit(1);
+                    }
+                    if (pid == 0) {
+                        signal(SIGINT,SIG_IGN);//si nos hacen ctrl+c no cancelamos
+                        signal(SIGQUIT,SIG_IGN);//si nos hacen ctrl+\ no cancelamos
+                        ejecutar1(line);
+                        
+                    }
+                    else{
+                        nuevoTrabajo(&primero,&ultimo,buf);//introducimos al hijo en la lista de bg
+                        printf("[%d]\n", pid);//mostramos el pid del proceso por el que espera
+                    }
                 }
-                else if (pid == 0) { // Proceso Hijo 
+                else if(!line->background){
                     signal(SIGINT,SIG_DFL);//si nos hacen ctrl+c cancelamos
                     signal(SIGQUIT,SIG_DFL);//si nos hacen ctrl+\ cancelamos
-                    if (!strcmp((char *) line->commands[0].argv[0], "jobs")){
-                        jobs(&primero);
-                    }
-                    // esCd();
-                    // esFg();
-                    execvp(line->commands[0].argv[0], line->commands[0].argv); //ejecutar el primer comando
-                    //Si llega aquí es que se ha producido un error en el execvp
-                    printf("Error al ejecutar el comando: %s\n", strerror(errno));
-                    exit(1);
-                }
-                else {
-                    if(!line->background){
-                        wait(&status);//hacemos un wait del padre
-                        if(WIFEXITED(status) != 0)//comprobamos que el hijo haya terminado
-                            if(WEXITSTATUS(status) != 0)//vemos a ver si ha resultado incorrecta la resolucion del mandato
-                                printf("El comando no se ejecutó correctamente\n");
-                    }
-                    if (line->background) {
-                        nuevoTrabajo(&primero,&ultimo,line->commands[0].argv[0]);
-                        printf("comando a ejecutarse en background\n");
-                        printf("msh>$ ");
-                        continue;
-                    } 
-                }
+                    ejecutar1(bg,line);
+                }                
             }
+        }
+        if (!strcmp((char *) line->commands[0].argv[0], "jobs")){//caso en el que se ejecute jobs
+            jobs(&primero);
         }
         //Ahora vamos a hacer el for
         //for(i=0; i< line->ncommands; i++){
         else if(line->ncommands > 1){//comprobamos que nos meten más de un comando
-            pid_t pid1, pid2;
-            int status;
-            int p[2];//aqui declaramos los descriptores de fichero
-            int entrada;//aqui vamos a guardar la salida de un pipe para ponerlo en la entrada del siguiente
-            entrada = 0; //inicializamos la entrada aunque el primer valor es irrelevante
-            //pues se va a guardar la salida cuando se ejecute la primera iteración
-            pid1 = fork();
-            if(pid1==0){
+            if(line->background){
 
-                signal(SIGINT,SIG_DFL);//si nos hacen ctrl+c cancelamos el proceso
-                signal(SIGQUIT,SIG_DFL);//si nos hacen ctrl+\ cancelamos el proceso
-
-                for(i = 0; i< line->ncommands-1 ; i++){
-                    pipe(p);//inicializamos la tubería
-
-                    pid2 = fork();
-                    if (pid2 == 0){
-
-                        /*Aqui queremos hacer una iteración normal del bucle 
-                        en primer lugar vamos a duplicar la entrada del pipe en la salida del último pipe (la entrada del nuevo)
-                        en la entrada estándar y luego vamos a duplicar la salida del pipe en la salida estándar*/
-
-                        if( entrada != 0 ){
-                            dup2(entrada,0);//duplicamos salida del ultimo pipe en la entrada estándar
-                            close(entrada);//cerramos la salida del ultimo pipe
-                        }
-                        if(p[1] != 1){
-                            dup2(p[1],1);//duplicamos la entrada del pipe en la salida estándar
-                            close(p[1]);//cerramos la entrada del pipe
-                        }
-
-                        execvp( line->commands[i].argv[0], line->commands[i].argv);//ejecutamos el comando
-                    }
-
-                    close(p[1]);//cerramos el extremo de escritura
-
-                    entrada = p[0];//metemos la salida del pipe en lo que será la entrada del siguiente
-                }
-
-                dup2(entrada, 0);//para el último mandato duplicamos la salida del pipe en la entrada estándar
-                close(entrada);
-                close(p[1]);
-
-                //ejecutamos el último mandato
-                execvp(line->commands[line->ncommands-1].argv[0], line->commands[line->ncommands -1].argv);
             }
+            else if(!line->background){
+                signal(SIGINT,SIG_DFL);//si nos hacen ctrl+c cancelamos
+                signal(SIGQUIT,SIG_DFL);//si nos hacen ctrl+\ cancelamos
+                ejecutar1(line);
+            } 
 
-            waitpid(pid1, &status, 0);// vamos a esperar al hijo que nos da la solución
-            printf("El hijo ha terminado\n");
+
+            
+            if(!line->background){
+                
+            }
+            
+            if (line->background) {
+                nuevoTrabajo(&primero,&ultimo,buf);
+                printf("comando a ejecutarse en background\n");
+                printf("msh>$ ");
+                continue;
+            } 
 
 		}
 
@@ -209,16 +178,98 @@ int main(void){
 
 }
 
+void ejecutar1(int bg, tline *line){
+    pid_t pidp1;
+    int status;
+    pidp1 = fork();
+    if (pidp1 < 0) { //Mensaje de error por si falla el fork
+        fprintf(stderr, "Falló el fork().\n%s\n", strerror(errno));
+        exit(1);
+    }
+    else if (pidp1 == 0) { // Proceso Hijo 
+        if(bg)
+        if (line->commands[0].filename == NULL) {
+            fprintf(stderr, "%s : No se encuentra el mandato.\n", line->commands[0].argv[0]);
+        }
+        else{
+            execvp(line->commands[0].argv[0], line->commands[0].argv); //ejecutar el primer comando
+            //Si llega aquí es que se ha producido un error en el execvp
+            exit(1);
+        } 
+    }
+    else {
+        wait(&status);//hacemos un wait del padre
+        if(WIFEXITED(status) != 0)//comprobamos que el hijo haya terminado
+            if(WEXITSTATUS(status) != 0)//vemos a ver si ha resultado incorrecta la resolucion del mandato
+                printf("El comando no se ejecutó correctamente\n");
+    }
+}
+
+void ejecutarN(tline *line){
+    pid_t pid1, pid2;
+    int i;
+    int status;
+    int p[2];//aqui declaramos los descriptores de fichero
+    int entrada;//aqui vamos a guardar la salida de un pipe para ponerlo en la entrada del siguiente
+    entrada = 0; //inicializamos la entrada aunque el primer valor es irrelevante
+    //pues se va a guardar la salida cuando se ejecute la primera iteración
+    pid1 = fork();
+    if(pid1==0){
+        for(i = 0; i< line->ncommands-1 ; i++){
+            
+            pipe(p);//inicializamos la tubería
+
+            pid2 = fork();
+            if (pid2 == 0){
+
+                /*Aqui queremos hacer una iteración normal del bucle 
+                en primer lugar vamos a duplicar la entrada del pipe en la salida del último pipe (la entrada del nuevo)
+                en la entrada estándar y luego vamos a duplicar la salida del pipe en la salida estándar*/
+
+                if( entrada != 0 ){
+                    dup2(entrada,0);//duplicamos salida del ultimo pipe en la entrada estándar
+                    close(entrada);//cerramos la salida del ultimo pipe
+                }
+                if(p[1] != 1){
+                    dup2(p[1],1);//duplicamos la entrada del pipe en la salida estándar
+                    close(p[1]);//cerramos la entrada del pipe
+                }
+                if (!strcmp((char *) line->commands[i].argv[0], "jobs")){
+                    jobs(&primero);
+                }
+                else{
+                    execvp( line->commands[i].argv[0], line->commands[i].argv);//ejecutamos el comando
+                }
+                
+            }
+
+            close(p[1]);//cerramos el extremo de escritura
+
+            entrada = p[0];//metemos la salida del pipe en lo que será la entrada del siguiente
+        }
+
+        dup2(entrada, 0);//para el último mandato duplicamos la salida del pipe en la entrada estándar
+        close(entrada);
+        close(p[1]);
+
+        //ejecutamos el último mandato
+        execvp(line->commands[line->ncommands-1].argv[0], line->commands[line->ncommands -1].argv);
+    }
+    waitpid(pid1, &status, 0);// vamos a esperar al hijo que nos da la solución
+    printf("El hijo ha terminado\n");
+}
+
 void nuevoTrabajo(TCola *primero, TCola *ultimo, char* trabajo){
     TCola nuevo;
 
     nuevo = (TCola) malloc(sizeof(TNodo));
-    nuevo->nombre = trabajo;
+    strcpy(nuevo->nombre, trabajo);
     nuevo->sig = NULL;
     if(*ultimo){//Si el último no es vacío
         (*ultimo)->sig = nuevo;
     }
     *ultimo = nuevo;
+    // printf("%s\n", (*ultimo)->nombre);
     if(!*primero){//Caso en el que la lista sea vacía
         *primero = nuevo;
     } 
@@ -241,10 +292,16 @@ void jobs(TCola *primero){
     int i = 1;
     TCola aux;
     aux = *primero;
-    while(aux->sig){
-        fprintf(stderr,"[%d]   Running                 %s\n", i, aux->nombre);
+    while(aux){
+        fprintf(stdout,"[%d]   Running                 %s\n", i,(char*)aux->nombre);
         aux = aux->sig;
         i++;
     }
     free(aux);
+}
+
+void manejador(int sig){
+    if(sig == SIGUSR1){
+        //
+    }
 }
