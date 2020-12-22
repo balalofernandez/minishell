@@ -12,32 +12,42 @@
 
 #include "parser.h"
 
-typedef struct Nodo{
+typedef struct job{
+    pid_t pid;
     char nombre[1024];
-    struct Nodo *sig;
-} TNodo;
-
-typedef TNodo *TCola;
+} TJob;
 
 
 
 //FUNCIONES
 void ejecutar1(int bg, tline *line);
-void nuevoTrabajo(TCola *primero, TCola *ultimo, char *trabajo);
-void procesoTerminado(TCola *primero);
-void jobs(TCola *primero);
+void ejecutarN(int bg, tline *line);
+// void ejecutarN(int bg, TLista *Cola, tline *line);
+void nuevoTrabajo(pid_t pid, char* trabajo);
+// void procesoTerminado(TLista *primeroJobs);
+void jobs();
+//void jobTerminado(pid_t pid);
 void manejador(int sig);
 
+//GLOBALES
+//Inicializamos la cola del jobs
+int contadorSinFinalizar;//contador de los procesos
+int contadorFinalizado;//contador de los procesos finalizados
+TJob *procesosBackground;//Lista con los procesos en background
+int * pidFinalizados;//Lista con los procesos finalizados
+
 int main(void){
+    //Inicializamos
+    contadorFinalizado = 1;
+    contadorSinFinalizar = 1;
+    procesosBackground = (TJob *) malloc(sizeof(TJob));
+    pidFinalizados = (int *) malloc(sizeof(int));
+
     char buf[1024];//el buffer para leer de la entrada
 	tline * line;//la línea que leemos
 	int i,j;
     int fd;
     char *fichero;
-
-    //Inicializamos la cola del jobs
-    TCola primero = NULL;
-    TCola ultimo = NULL;
 
     //guardamos los descriptores de la entrada, la salida y el error para si hay un redirección poder volver 
     //a la estándar
@@ -103,7 +113,6 @@ int main(void){
         //por lo que ejecutamos el mandato con execvp.
         if(line->ncommands == 1 && strcmp((char *) line->commands[0].argv[0], "jobs")){
             pid_t pid;//aqui vamos a guardar el pid de los procesos
-            int status;
             if (line->commands->argc > 0){
                 if(line->background){
                     pid = fork();//creamos el hijo
@@ -112,51 +121,44 @@ int main(void){
                         exit(1);
                     }
                     if (pid == 0) {
-                        signal(SIGINT,SIG_IGN);//si nos hacen ctrl+c no cancelamos
-                        signal(SIGQUIT,SIG_IGN);//si nos hacen ctrl+\ no cancelamos
-                        ejecutar1(line);
-                        
+                        ejecutar1(line->background,line);
+                        kill(getppid(), SIGUSR1);
+                        exit(0);                        
                     }
                     else{
-                        nuevoTrabajo(&primero,&ultimo,buf);//introducimos al hijo en la lista de bg
+                        nuevoTrabajo(pid,buf);//introducimos al hijo en la lista de bg
                         printf("[%d]\n", pid);//mostramos el pid del proceso por el que espera
                     }
                 }
                 else if(!line->background){
-                    signal(SIGINT,SIG_DFL);//si nos hacen ctrl+c cancelamos
-                    signal(SIGQUIT,SIG_DFL);//si nos hacen ctrl+\ cancelamos
-                    ejecutar1(bg,line);
+                    ejecutar1(line->background,line);
                 }                
             }
         }
-        if (!strcmp((char *) line->commands[0].argv[0], "jobs")){//caso en el que se ejecute jobs
-            jobs(&primero);
+        else if (!strcmp((char *) line->commands[0].argv[0], "jobs")){//caso en el que se ejecute jobs
+            printf("vamos a ejecutar el jobs\n");
+            jobs();
         }
-        //Ahora vamos a hacer el for
-        //for(i=0; i< line->ncommands; i++){
+        
         else if(line->ncommands > 1){//comprobamos que nos meten más de un comando
             if(line->background){
-
+                pid_t pid = fork();//creamos el hijo
+                if (pid < 0) { //Mensaje de error por si falla el fork
+                    fprintf(stderr, "Falló el fork().\n%s\n", strerror(errno));
+                    exit(1);
+                }
+                if (pid == 0) {
+                    ejecutarN(line->background,line);
+                    exit(0);                      
+                }
+                else{
+                    nuevoTrabajo(pid, buf);//introducimos al hijo en la lista de bg
+                    printf("[%d]\n", pid);//mostramos el pid del proceso por el que espera
+                }
             }
             else if(!line->background){
-                signal(SIGINT,SIG_DFL);//si nos hacen ctrl+c cancelamos
-                signal(SIGQUIT,SIG_DFL);//si nos hacen ctrl+\ cancelamos
-                ejecutar1(line);
+                ejecutarN(line->background,line);
             } 
-
-
-            
-            if(!line->background){
-                
-            }
-            
-            if (line->background) {
-                nuevoTrabajo(&primero,&ultimo,buf);
-                printf("comando a ejecutarse en background\n");
-                printf("msh>$ ");
-                continue;
-            } 
-
 		}
 
         //con esto volvemos a la estándar
@@ -187,7 +189,14 @@ void ejecutar1(int bg, tline *line){
         exit(1);
     }
     else if (pidp1 == 0) { // Proceso Hijo 
-        if(bg)
+        if(bg){
+            signal(SIGINT,SIG_IGN);//si nos hacen ctrl+c no cancelamos
+            signal(SIGQUIT,SIG_IGN);//si nos hacen ctrl+\ no cancelamos
+        }
+        else if (!bg){
+            signal(SIGINT,SIG_DFL);//si nos hacen ctrl+c cancelamos
+            signal(SIGQUIT,SIG_DFL);//si nos hacen ctrl+\ cancelamos
+        }
         if (line->commands[0].filename == NULL) {
             fprintf(stderr, "%s : No se encuentra el mandato.\n", line->commands[0].argv[0]);
         }
@@ -205,7 +214,7 @@ void ejecutar1(int bg, tline *line){
     }
 }
 
-void ejecutarN(tline *line){
+void ejecutarN(int bg, tline *line){
     pid_t pid1, pid2;
     int i;
     int status;
@@ -215,6 +224,14 @@ void ejecutarN(tline *line){
     //pues se va a guardar la salida cuando se ejecute la primera iteración
     pid1 = fork();
     if(pid1==0){
+        if(bg){
+            signal(SIGINT,SIG_IGN);//si nos hacen ctrl+c no cancelamos
+            signal(SIGQUIT,SIG_IGN);//si nos hacen ctrl+\ no cancelamos
+        }
+        else if (!bg){
+            signal(SIGINT,SIG_DFL);//si nos hacen ctrl+c cancelamos
+            signal(SIGQUIT,SIG_DFL);//si nos hacen ctrl+\ cancelamos
+        }
         for(i = 0; i< line->ncommands-1 ; i++){
             
             pipe(p);//inicializamos la tubería
@@ -235,10 +252,11 @@ void ejecutarN(tline *line){
                     close(p[1]);//cerramos la entrada del pipe
                 }
                 if (!strcmp((char *) line->commands[i].argv[0], "jobs")){
-                    jobs(&primero);
+                    jobs();
                 }
                 else{
                     execvp( line->commands[i].argv[0], line->commands[i].argv);//ejecutamos el comando
+                    exit(1);//por si falla la ejecución
                 }
                 
             }
@@ -254,54 +272,72 @@ void ejecutarN(tline *line){
 
         //ejecutamos el último mandato
         execvp(line->commands[line->ncommands-1].argv[0], line->commands[line->ncommands -1].argv);
+        exit(1);//por si falla la ejecución
     }
     waitpid(pid1, &status, 0);// vamos a esperar al hijo que nos da la solución
-    printf("El hijo ha terminado\n");
 }
 
-void nuevoTrabajo(TCola *primero, TCola *ultimo, char* trabajo){
-    TCola nuevo;
+void nuevoTrabajo(pid_t pid, char* trabajo){
+    (procesosBackground + (contadorSinFinalizar-1))->pid = pid;
+    strcpy((procesosBackground + (contadorSinFinalizar-1))->nombre, trabajo);
+    contadorSinFinalizar ++;
+    procesosBackground = (TJob *) realloc(procesosBackground, sizeof(TJob)*(contadorSinFinalizar));
+}
 
-    nuevo = (TCola) malloc(sizeof(TNodo));
-    strcpy(nuevo->nombre, trabajo);
-    nuevo->sig = NULL;
-    if(*ultimo){//Si el último no es vacío
-        (*ultimo)->sig = nuevo;
+void jobs(){
+    int i;
+    for(i=1; i<contadorSinFinalizar; i++){
+        fprintf(stderr,"[%d]   Running                 %s\n", i, (procesosBackground+(i-1))->nombre);
     }
-    *ultimo = nuevo;
-    // printf("%s\n", (*ultimo)->nombre);
-    if(!*primero){//Caso en el que la lista sea vacía
-        *primero = nuevo;
-    } 
 }
 
-void procesoTerminado(TCola *primero){
-    TCola aux;
+void jobTerminado(pid_t p){
+    int i=0;
+    int encontrado = 0;
+    while(i<contadorSinFinalizar && !encontrado){
+        if((procesosBackground+(i))->pid == p){
+            encontrado = 1;
+        }
+        else{i++;}
+    }
 
-    if(!*primero){//caso en el que el primero sea NULL
-        fprintf( stderr , "Error: No hay más procesos");
+    TLista aux1,aux2;
+    aux1 = primeroJobs;
+    if(primeroJobs->pid == p){
+        aux2 = NULL;
+    }
+    else{
+        aux2 = primeroJobs->sig;
+    }
+    while(aux2 && aux2->pid != p){
+        aux1 = aux2;
+        aux2 = aux2->sig;
+    }
+    if(!aux2){//caso en el que el primeroJobs sea NULL
+        fprintf( stderr , "Error: No se ha encontrado el proceso");
         exit(1);
     }
-    aux = *primero;
-    *primero = (*primero)->sig;
-    free(aux);
-
-}
-
-void jobs(TCola *primero){
-    int i = 1;
-    TCola aux;
-    aux = *primero;
-    while(aux){
-        fprintf(stdout,"[%d]   Running                 %s\n", i,(char*)aux->nombre);
-        aux = aux->sig;
-        i++;
+    else{//hemos encontrado el pid
+        aux1->sig = aux2->sig;
+        if (primeroFinalizado){//añadimos el proceso a la lista de finalizados
+            aux2->sig = primeroFinalizado->sig;
+            primeroFinalizado = aux2;
+        }
+        else{
+            aux2->sig = NULL;
+            primeroFinalizado = aux2;
+        } 
     }
-    free(aux);
+    free(aux1);
+    free(aux2);
 }
 
 void manejador(int sig){
     if(sig == SIGUSR1){
-        //
+        int pidTerminado = wait(NULL);//cuando termine el background el padre da el pid
+        *(pidFinalizados + (contadorFinalizado-1)) = pidTerminado;
+        contadorFinalizado++;
+        pidFinalizados = (int *) realloc(pidFinalizados,sizeof(int)*(contadorFinalizado));
+
     }
 }
