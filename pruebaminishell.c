@@ -28,7 +28,7 @@ void nuevoTrabajo(pid_t pid, char* trabajo);
 void jobs();
 void jobTerminado(pid_t pid);
 void manejador(int sig);
-
+void cd (tline *line);
 //GLOBALES
 //Inicializamos la cola del jobs
 int contadorSinFinalizar;//contador de los procesos
@@ -43,6 +43,7 @@ int main(void){
     procesosBackground = (TJob *) malloc(sizeof(TJob));
     pidFinalizados = (int *) malloc(sizeof(int));
 
+    char directorio[512];
     char buf[1024];//el buffer para leer de la entrada
 	tline * line;//la línea que leemos
 	int i,j;
@@ -60,7 +61,7 @@ int main(void){
     signal(SIGINT,SIG_IGN);//si nos hacen ctrl+c no cancelamos
     signal(SIGQUIT,SIG_IGN);//si nos hacen ctrl+\ no cancelamos
 
-    printf("msh>$ ");//imprimimos por primera vez el prompt
+    printf("%s=> ",getcwd(directorio, 512));//imprimimos por primera vez el prompt
     //Vamos a hacer un bucle infinito que lea de la entrada estándar
     while(fgets(buf,1024,stdin)){
         line = tokenize(buf);//recogemos la info de la línea
@@ -70,7 +71,7 @@ int main(void){
 
 
         if (line==NULL || !strcmp(buf, "\n")) {//Queremos que el bucle vuelva a empezar si han pulsado "ENTER"
-            printf("msh>$ ");   
+            printf("%s=> ",getcwd(directorio, 512));
 			continue;
 		}
         if (line->redirect_input != NULL) {
@@ -111,7 +112,7 @@ int main(void){
         //para concatenar los mandatos.
         //Primero vamos a tener un caso base que es que solamente tenemos un único mandato
         //por lo que ejecutamos el mandato con execvp.
-        if(line->ncommands == 1 && strcmp((char *) line->commands[0].argv[0], "jobs")){
+        if(line->ncommands == 1 && strcmp((char *) line->commands[0].argv[0], "jobs") && strcmp(line->commands[0].argv[0],"cd")){
             pid_t pid;//aqui vamos a guardar el pid de los procesos
             if (line->commands->argc > 0){
                 if(line->background){
@@ -138,6 +139,9 @@ int main(void){
         else if (!strcmp((char *) line->commands[0].argv[0], "jobs")){//caso en el que se ejecute jobs
             printf("vamos a ejecutar el jobs\n");
             jobs();
+        }
+        else if ((!strcmp((char *) line->commands[0].argv[0],"cd")) && line->ncommands == 1){//caso en el que se ejecute el cd
+            cd(line);
         }
         
         else if(line->ncommands > 1){//comprobamos que nos meten más de un comando
@@ -175,7 +179,7 @@ int main(void){
             printf("\n");
 		}
 
-        printf("msh>$ ");
+        printf("%s=> ",getcwd(directorio, 512));	
     }
 
 }
@@ -275,6 +279,24 @@ void ejecutarN(int bg, tline *line){
         exit(1);//por si falla la ejecución
     }
     waitpid(pid1, &status, 0);// vamos a esperar al hijo que nos da la solución
+}
+
+void cd(tline *line){
+    char *dir;
+    if (line->commands->argc>2){
+        fprintf(stderr,"Error; uso: cd [directorio]\n");
+    }
+    else{
+        if (line->commands->argc==1){
+            dir = getenv("HOME");
+        }
+        else {
+            dir = line->commands->argv[1];
+            if (chdir(dir)){
+                fprintf(stderr,"%s no encontrado\n",dir);
+            }
+        }
+    }
 }
 
 void nuevoTrabajo(pid_t pid, char* trabajo){
