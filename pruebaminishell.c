@@ -292,10 +292,11 @@ void cd(tline *line){
         }
         else {
             dir = line->commands->argv[1];
-            if (chdir(dir)){
-                fprintf(stderr,"%s no encontrado\n",dir);
-            }
         }
+        if (chdir(dir)){//cambiamos el directorio
+            fprintf(stderr,"%s no encontrado\n",dir);
+        }
+        
     }
 }
 
@@ -311,6 +312,7 @@ void jobs(){
     for(i=0; i<contadorFinalizado; i++){
         jobTerminado(*(pidFinalizados + i));
     }
+    contadorFinalizado -= i;
     for(i=0; i<contadorSinFinalizar; i++){
         fprintf(stderr,"[%d]   Running                 %s\n", i+1, (procesosBackground+i)->nombre);
     }
