@@ -13,7 +13,7 @@
 #include "parser.h"
 
 typedef struct job{
-    pid_t pid;
+    int pid;
     char nombre[1024];
 } TJob;
 
@@ -26,7 +26,7 @@ void ejecutarN(int bg, tline *line);
 void nuevoTrabajo(pid_t pid, char* trabajo);
 // void procesoTerminado(TLista *primeroJobs);
 void jobs();
-//void jobTerminado(pid_t pid);
+void jobTerminado(pid_t pid);
 void manejador(int sig);
 
 //GLOBALES
@@ -38,8 +38,8 @@ int * pidFinalizados;//Lista con los procesos finalizados
 
 int main(void){
     //Inicializamos
-    contadorFinalizado = 1;
-    contadorSinFinalizar = 1;
+    contadorFinalizado = 0;
+    contadorSinFinalizar = 0;
     procesosBackground = (TJob *) malloc(sizeof(TJob));
     pidFinalizados = (int *) malloc(sizeof(int));
 
@@ -278,66 +278,60 @@ void ejecutarN(int bg, tline *line){
 }
 
 void nuevoTrabajo(pid_t pid, char* trabajo){
-    (procesosBackground + (contadorSinFinalizar-1))->pid = pid;
-    strcpy((procesosBackground + (contadorSinFinalizar-1))->nombre, trabajo);
+    (procesosBackground + contadorSinFinalizar)->pid = pid;
+    strcpy((procesosBackground + contadorSinFinalizar)->nombre, trabajo);
     contadorSinFinalizar ++;
-    procesosBackground = (TJob *) realloc(procesosBackground, sizeof(TJob)*(contadorSinFinalizar));
+    procesosBackground = (TJob *) realloc(procesosBackground, sizeof(TJob)*(contadorSinFinalizar + 1));
 }
 
 void jobs(){
     int i;
-    for(i=1; i<contadorSinFinalizar; i++){
-        fprintf(stderr,"[%d]   Running                 %s\n", i, (procesosBackground+(i-1))->nombre);
+    for(i=0; i<contadorFinalizado; i++){
+        jobTerminado(*(pidFinalizados + i));
+    }
+    for(i=0; i<contadorSinFinalizar; i++){
+        fprintf(stderr,"[%d]   Running                 %s\n", i+1, (procesosBackground+i)->nombre);
     }
 }
 
-void jobTerminado(pid_t p){
-    int i=0;
+void jobTerminado(int p){
+    int i;
     int encontrado = 0;
-    while(i<contadorSinFinalizar && !encontrado){
-        if((procesosBackground+(i))->pid == p){
-            encontrado = 1;
-        }
-        else{i++;}
-    }
-
-    TLista aux1,aux2;
-    aux1 = primeroJobs;
-    if(primeroJobs->pid == p){
-        aux2 = NULL;
+    //Vamos a hacer un bucle que copie todos aquellos elementos que no son el pid que buscamos y que elimine el que si buscamos
+    TJob *aux = (TJob*) malloc(sizeof(TJob)*(contadorSinFinalizar));
+	for (i = 0; i < contadorSinFinalizar; i++){
+		if ((p != (procesosBackground + i)->pid) && (!encontrado)) {
+			(aux + i)->pid = (procesosBackground + i)->pid;
+			strcpy((aux + i)->nombre, (procesosBackground + i)->nombre);			
+		}
+		else if(p == (procesosBackground + i)->pid){
+			encontrado = 1;
+			//j = i;
+		}
+		else{
+			(aux + (i-1))->pid = (procesosBackground + i)->pid;
+			strcpy((aux + (i-1))->nombre, (procesosBackground + i)->nombre);
+		}
+	}
+    if(encontrado){
+        printf("se ha encontrado el proceso\n");
+        contadorSinFinalizar--;
+        procesosBackground = (TJob*) realloc(procesosBackground, sizeof(TJob)*(contadorSinFinalizar));
+                
+        printf("%d\n",contadorSinFinalizar);
+        procesosBackground = aux;
     }
     else{
-        aux2 = primeroJobs->sig;
+        fprintf(stderr,"no se ha encontrado el proceso\n");
     }
-    while(aux2 && aux2->pid != p){
-        aux1 = aux2;
-        aux2 = aux2->sig;
-    }
-    if(!aux2){//caso en el que el primeroJobs sea NULL
-        fprintf( stderr , "Error: No se ha encontrado el proceso");
-        exit(1);
-    }
-    else{//hemos encontrado el pid
-        aux1->sig = aux2->sig;
-        if (primeroFinalizado){//añadimos el proceso a la lista de finalizados
-            aux2->sig = primeroFinalizado->sig;
-            primeroFinalizado = aux2;
-        }
-        else{
-            aux2->sig = NULL;
-            primeroFinalizado = aux2;
-        } 
-    }
-    free(aux1);
-    free(aux2);
 }
 
 void manejador(int sig){
     if(sig == SIGUSR1){
         int pidTerminado = wait(NULL);//cuando termine el background el padre da el pid
-        *(pidFinalizados + (contadorFinalizado-1)) = pidTerminado;
+        *(pidFinalizados + (contadorFinalizado)) = pidTerminado;
         contadorFinalizado++;
-        pidFinalizados = (int *) realloc(pidFinalizados,sizeof(int)*(contadorFinalizado));
+        pidFinalizados = (int *) realloc(pidFinalizados,sizeof(int)*(contadorFinalizado+1));
 
     }
 }
